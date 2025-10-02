@@ -910,8 +910,18 @@ def user_risk_analysis(user_id):
     """
     
     score = 0
-
-    return score;
+    # Find all posts for the user
+    user_posts = query_db(f'SELECT * FROM posts WHERE user_id={user_id};')
+    post_score = 0
+    for post in user_posts:
+        moderated_str, post_score = moderate_content(post['content'])
+        if post_score > 0:
+            post_score += 0
+    if (post_score > 0):
+        score = post_score
+    else:
+        score = 0
+    return score
 
     
 # Task 3.3
@@ -932,9 +942,14 @@ def moderate_content(content):
     Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
 
-    moderated_content = content
+    original_content = content
     score = 0
-    
+    T3_PATTERN =r'\b(' + '|'.join(re.escape(word) for word in TIER3_WORDS) + ')'
+    matches = re.findall(T3_PATTERN, original_content, flags=re.IGNORECASE)
+    flags = re.IGNORECASE
+    score = len(matches)
+    moderated_content = re.sub(T3_PATTERN, lambda m: '*' * len(m.group(0)), original_content, flags=re.IGNORECASE)
+
     return moderated_content, score
 
 
