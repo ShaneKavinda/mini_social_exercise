@@ -1027,15 +1027,37 @@ def moderate_content(content):
             password: admin
     Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
-
+    if content is None:
+        return '', 0.0
     original_content = content
     score = 0
+    T1_PATTERN = r'\b(' + '|'.join(re.escape(word) for word in TIER1_WORDS) + ')'
+    T2_PATTERN =r'\b(' + '|'.join(re.escape(word) for word in TIER2_PHRASES) + ')'
     T3_PATTERN =r'\b(' + '|'.join(re.escape(word) for word in TIER3_WORDS) + ')'
-    matches = re.findall(T3_PATTERN, original_content, flags=re.IGNORECASE)
-    flags = re.IGNORECASE
-    score = len(matches)
-    moderated_content = re.sub(T3_PATTERN, lambda m: '*' * len(m.group(0)), original_content, flags=re.IGNORECASE)
-
+    # print(TIER2_PHRASES)
+    t1_matches = re.findall(T1_PATTERN, original_content, flags=re.IGNORECASE)
+    t2_matches = re.findall(T2_PATTERN, original_content, flags=re.IGNORECASE)
+    t3_matches = re.findall(T3_PATTERN, original_content, flags=re.IGNORECASE)
+    moderated_content = original_content
+    if (len(t1_matches) > 0):
+        moderated_content = '[content removed due to severe violation]'
+        score = 5.0
+        return moderated_content, score
+    elif (len(t2_matches) > 0):
+        moderated_content = '[content remove due to spam/scam policy]'
+        score = 5.0
+        return moderated_content, score
+    elif (len(t3_matches) > 0):
+        for match in t3_matches:
+            score += 2.0
+        moderated_content = re.sub(T3_PATTERN, lambda m: '*' * len(m.group(0)), original_content, flags=re.IGNORECASE)
+        # check for URLs in the moderated content
+        url_matches = re.findall(r'\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\[\.\]|\.|\[dot\]|\(dot\))(?:[a-zA-Z]{2,})\b', original_content)
+        if (len(url_matches) > 0):
+            moderated_content = re.sub(r'\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\[\.\]|\.|\[dot\]|\(dot\))(?:[a-zA-Z]{2,})\b',
+                                        lambda m: '*' * len(m.group(0)), moderated_content, flags=re.IGNORECASE)
+            score += 2.0 * len(url_matches)
+            print(original_content)
     return moderated_content, score
 
 
