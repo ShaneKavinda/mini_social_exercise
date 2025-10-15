@@ -1007,6 +1007,18 @@ def user_risk_analysis(user_id):
         else:
             comments_score = 0
     score += comments_score
+
+    # Get the age of the account in days
+    user_age_query = query_db(f'''
+                    SELECT 
+                        (JULIANDAY('NOW') - JULIANDAY(created_at)) AS age
+                    FROM users
+                    WHERE id = ?
+        ''', (user_id,))
+    user_age = user_age_query[0]['age'] # Get the age value in the first row(only row returned) of the returned output
+    if (user_age < 7.00):
+        score *= 1.5    # Multiply the risk score by 1.5
+    print(f'user age: {user_age}')
     return score
 
     
@@ -1031,7 +1043,7 @@ def moderate_content(content):
         return '', 0.0
     original_content = content
     score = 0
-    T1_PATTERN = r'\b(' + '|'.join(re.escape(word) for word in TIER1_WORDS) + ')'
+    T1_PATTERN = r'\b(' + '|'.join(re.escape(word) for word in TIER1_WORDS) + ')\b'
     T2_PATTERN =r'\b(' + '|'.join(re.escape(word) for word in TIER2_PHRASES) + ')'
     T3_PATTERN =r'\b(' + '|'.join(re.escape(word) for word in TIER3_WORDS) + ')'
     # print(TIER2_PHRASES)
@@ -1041,6 +1053,7 @@ def moderate_content(content):
     moderated_content = original_content
     if (len(t1_matches) > 0):
         moderated_content = '[content removed due to severe violation]'
+        print(f'tier 1:{original_content}, matches: {t1_matches}')
         score = 5.0
         return moderated_content, score
     elif (len(t2_matches) > 0):
@@ -1051,13 +1064,19 @@ def moderate_content(content):
         for match in t3_matches:
             score += 2.0
         moderated_content = re.sub(T3_PATTERN, lambda m: '*' * len(m.group(0)), original_content, flags=re.IGNORECASE)
-        # check for URLs in the moderated content
-        url_matches = re.findall(r'\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\[\.\]|\.|\[dot\]|\(dot\))(?:[a-zA-Z]{2,})\b', original_content)
-        if (len(url_matches) > 0):
-            moderated_content = re.sub(r'\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\[\.\]|\.|\[dot\]|\(dot\))(?:[a-zA-Z]{2,})\b',
-                                        lambda m: '*' * len(m.group(0)), moderated_content, flags=re.IGNORECASE)
-            score += 2.0 * len(url_matches)
-            print(original_content)
+    # check for URLs in the moderated content
+    # https://regex101.com/r/fC4pU4/1
+    url_matches = re.findall(r"[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)|(\[\.\][a-zA-Z0-9()]{1,10})\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)", original_content)
+    if (len(url_matches) > 0):
+        moderated_content = re.sub(r"[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)|(\[\.\][a-zA-Z0-9()]{1,10})\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)",
+                                    lambda m: '*' * len(m.group(0)), moderated_content, flags=re.IGNORECASE)
+        score += 2.0 * len(url_matches)
+        print(f'tier 3: {original_content}, matches: {t3_matches, url_matches}')
+    # Increment score by 0.5 if more than 15% of the string are alphabetical characters and more than 70% of the content string is capitalized
+    uppercase_ratio = sum(map(str.isupper, moderated_content)) / len(moderated_content)
+    alphabetical_ratio = sum(map(str.isalpha, moderated_content)) / len(moderated_content)
+    if ((alphabetical_ratio >  0.15) and (uppercase_ratio > 0.7)):
+        score += 0.5
     return moderated_content, score
 
 
