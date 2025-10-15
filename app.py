@@ -1065,7 +1065,13 @@ def moderate_content(content):
             score += 2.0
         moderated_content = re.sub(T3_PATTERN, lambda m: '*' * len(m.group(0)), original_content, flags=re.IGNORECASE)
     # check for URLs in the moderated content
-    # https://regex101.com/r/fC4pU4/1
+    # Slight modification to solution provided by https://stackoverflow.com/questions/3809401/what-is-a-good-regular-expression-to-match-a-url
+    # # Regex if you want to ensure URL starts with HTTP/HTTPS:
+    # # https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)
+    # # If you do not require HTTP protocol:
+    # # [-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)
+
+
     url_matches = re.findall(r"[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)|(\[\.\][a-zA-Z0-9()]{1,10})\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)", original_content)
     if (len(url_matches) > 0):
         moderated_content = re.sub(r"[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)|(\[\.\][a-zA-Z0-9()]{1,10})\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)",
