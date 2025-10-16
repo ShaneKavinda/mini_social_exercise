@@ -988,38 +988,55 @@ def user_risk_analysis(user_id):
             password: admin
         Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
-    
-    score = 0
+    # Calculate the user's profile score
+    user_profile = query_db(f'SELECT * from users WHERE id=?', (user_id,))
+    _,profile_score = moderate_content(user_profile[0]['profile'])
+
     # Find all posts for the user
-    user_posts = query_db(f'SELECT * FROM posts WHERE user_id=?;', [user_id])
     post_score = 0
+    user_posts = query_db(f'SELECT * FROM posts WHERE user_id=?;', [user_id])
     for post in user_posts:
-        moderated_str, post_score = moderate_content(post['content'])
-        if post_score > 0:
-            score += post_score
+        moderated_str, score = moderate_content(post['content'])
+        post_score += score
+    average_post_score = 0
+    if (len(user_posts) > 0):
+        average_post_score = post_score / len(user_posts)
+
     # Find violations from comments made by the user
     user_comments = query_db(f'SELECT * FROM comments WHERE user_id=?;', [user_id])
     comments_score = 0
     for comment in user_comments:
-        moderated_str, comment_score = moderate_content(comment['content'])
-        if comment_score > 0:
-            comments_score += comment_score
-        else:
-            comments_score = 0
-    score += comments_score
+        moderated_str, score = moderate_content(comment['content'])
+        comments_score += score
+    average_comment_score = 0
+    if (len(user_comments) > 0):
+        average_comment_score = comments_score / len(user_comments)
 
-    # Get the age of the account in days
-    user_age_query = query_db(f'''
-                    SELECT 
-                        (JULIANDAY('NOW') - JULIANDAY(created_at)) AS age
-                    FROM users
-                    WHERE id = ?
-        ''', (user_id,))
-    user_age = user_age_query[0]['age'] # Get the age value in the first row(only row returned) of the returned output
-    if (user_age < 7.00):
-        score *= 1.5    # Multiply the risk score by 1.5
-    print(f'user age: {user_age}')
-    return score
+    content_risk_score = (profile_score * 1) + (average_post_score * 3) + (average_comment_score * 1)
+
+    # Apply Account age multiplier
+    account_age = (datetime.utcnow() - user_profile[0]['created_at']).days
+    if (account_age < 7):
+        user_risk_score = content_risk_score * 1.5
+    elif (account_age > 7 & account_age <= 30):
+        user_risk_score = content_risk_score * 1.2
+    else:
+        user_risk_score = content_risk_score
+
+    # Apply a multiplier for users who spammed the same post
+    user_spam_count = query_db(f'SELECT COUNT(*) FROM posts WHERE user_id=? GROUP BY content', (user_id,))
+    max_spam_count = 0
+    for row in user_spam_count:
+        if (row[0] > 1 & row[0] > max_spam_count):
+            max_spam_count = row[0]
+    if (max_spam_count > 2):
+        if (user_risk_score == 0):
+            user_risk_score += 1    # If no previous offenses, add 1 to the user risk score
+        else:
+            user_risk_score += 0.2 * max_spam_count # If previous offenses exist, multiply the score by 1.2
+    # print(f'user: {user_profile[0]['id']} max spam count: {max_spam_count}, new user risk score : {user_risk_score}')
+
+    return min(user_risk_score, 5.0)
 
     
 # Task 3.3
@@ -1046,7 +1063,7 @@ def moderate_content(content):
     T1_PATTERN = r'\b(' + '|'.join(re.escape(word) for word in TIER1_WORDS) + ')\b'
     T2_PATTERN =r'\b(' + '|'.join(re.escape(word) for word in TIER2_PHRASES) + ')'
     T3_PATTERN =r'\b(' + '|'.join(re.escape(word) for word in TIER3_WORDS) + ')'
-    # print(TIER2_PHRASES)
+
     t1_matches = re.findall(T1_PATTERN, original_content, flags=re.IGNORECASE)
     t2_matches = re.findall(T2_PATTERN, original_content, flags=re.IGNORECASE)
     t3_matches = re.findall(T3_PATTERN, original_content, flags=re.IGNORECASE)
@@ -1076,14 +1093,16 @@ def moderate_content(content):
     if (len(url_matches) > 0):
         moderated_content = re.sub(r"[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)|(\[\.\][a-zA-Z0-9()]{1,10})\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)",
                                     lambda m: '*' * len(m.group(0)), moderated_content, flags=re.IGNORECASE)
-        score += 2.0 * len(url_matches)
-        print(f'tier 3: {original_content}, matches: {t3_matches, url_matches}')
+        if score < 5.0: 
+            score += 2.0 * len(url_matches)
+        # print(f'tier 3: {original_content}, matches: {t3_matches, url_matches}')
+    
     # Increment score by 0.5 if more than 15% of the string are alphabetical characters and more than 70% of the content string is capitalized
     uppercase_ratio = sum(map(str.isupper, moderated_content)) / len(moderated_content)
     alphabetical_ratio = sum(map(str.isalpha, moderated_content)) / len(moderated_content)
     if ((alphabetical_ratio >  0.15) and (uppercase_ratio > 0.7)):
         score += 0.5
-    return moderated_content, score
+    return moderated_content, min(score, 5.0)
 
 
 if __name__ == '__main__':
