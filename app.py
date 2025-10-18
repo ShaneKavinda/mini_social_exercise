@@ -892,87 +892,53 @@ def recommend(user_id, filter_following):
     - https://www.researchgate.net/publication/227268858_Recommender_Systems_Handbook
 
     """
-    # My own solution v1.0
-    # recommended_posts = {}
-    # # Get all posts the user has interacted with
-    # interacted_posts = query_db('SELECT posts.id, posts.content, posts.user_id FROM posts ' \
-    #                             'INNER JOIN comments ' \
-    #                             '   ON comments.post_id = posts.id ' \
-    #                             'INNER JOIN reactions ' \
-    #                             '   ON reactions.post_id = posts.id ' \
-    #                             'WHERE comments.user_id = (?) OR ' \
-    #                             '       reactions.user_id = (?) ' \
-    #                             'GROUP BY ' \
-    #                             '       posts.id ' \
-    #                             'ORDER BY posts.created_at DESC', [user_id, user_id]);
+    # My own solution 
+    recommended_posts = {}
+    # Get all posts the user has interacted with
+    interacted_posts = query_db('SELECT posts.id, posts.content, posts.user_id FROM posts ' \
+                                'INNER JOIN comments ' \
+                                '   ON comments.post_id = posts.id ' \
+                                'INNER JOIN reactions ' \
+                                '   ON reactions.post_id = posts.id ' \
+                                'WHERE comments.user_id = (?) OR ' \
+                                '       reactions.user_id = (?) ' \
+                                'GROUP BY ' \
+                                '       posts.id ' \
+                                'ORDER BY posts.created_at DESC', [user_id, user_id]);
 
-    # contents = [row[1] for row in interacted_posts]
-    # keywords = [i.split(' ') for i in contents]
-    # keywords = [word for keyword in keywords for word in keyword if (len(word) > 2)]    # FLatten the list and include words which are longer than 2 characters
-    # # count the occurences: https://stackoverflow.com/questions/2600191/how-do-i-count-the-occurrences-of-a-list-item
-    # keywords = sorted(set([i for i in keywords if keywords.count(i) > 2]))
-    # for word in keywords:
-    #     print(f'word: {word}')
-    #     posts_containing_keywords = query_db('SELECT p.id, p.user_id , p.content, u.username, p.created_at FROM posts AS p INNER JOIN users AS u on p.user_id = u.id WHERE p.content LIKE "%'+word+'%" ORDER BY p.created_at DESC')
-    #     # print(posts_containing_keywords[0]['content'])
-    #     if (len(posts_containing_keywords) > 5):
-    #         break
-    # recommended_posts = posts_containing_keywords[:5]
-    # return recommended_posts
-
-    # Provided solution
-      # 1. Get the content of all posts the user has liked (reacted to)
-    liked_posts_content = query_db('''
-        SELECT p.content FROM posts p
-        JOIN reactions r ON p.id = r.post_id
-        WHERE r.user_id = ?
-    ''', (user_id,))
-
-    # If the user hasn't liked any posts return the 5 newest posts
-    if not liked_posts_content:
-        return query_db('''
-            SELECT p.id, p.content, p.created_at, u.username, u.id as user_id
-            FROM posts p JOIN users u ON p.user_id = u.id
-            WHERE p.user_id != ? ORDER BY p.created_at DESC LIMIT 5
-        ''', (user_id,))
-
-    # 2. Find the most common words from the posts they liked
-    word_counts = collections.Counter()
-    # A simple list of common words to ignore
-    stop_words = {'a', 'an', 'the', 'in', 'on', 'is', 'it', 'to', 'for', 'of', 'and', 'with'}
+    contents = [row['content'] for row in interacted_posts]
+    interacted_post_id_str = ','.join(str(row['id']) for row in interacted_posts)   # To filter out posts user already interacted with
+    keywords = [i.split(' ') for i in contents]
+    keywords = [word for keyword in keywords for word in keyword if (len(word) > 2)]    # FLatten the list and include words which are longer than 2 characters
+    # count the occurences: https://stackoverflow.com/questions/2600191/how-do-i-count-the-occurrences-of-a-list-item
+    keywords = sorted(set([i for i in keywords if keywords.count(i) > 2]))
+    query_string = '''SELECT 
+                            p.id, p.user_id , p.content, u.username, p.created_at 
+                        FROM posts AS p INNER JOIN users AS u 
+                            ON p.user_id = u.id 
+                        WHERE 
+                            p.id NOT IN ('''+ interacted_post_id_str +''') AND '''
+    followed_users = query_db('''
+                                SELECT followed_id FROM follows WHERE follower_id = (?)
+                            ''', (user_id,))
+    followed_user_ids = ','.join(str(user['followed_id']) for user in followed_users)
     
-    for post in liked_posts_content:
-        # Use regex to find all words in the post content
-        words = re.findall(r'\b\w+\b', post['content'].lower())
-        for word in words:
-            if word not in stop_words and len(word) > 2:
-                word_counts[word] += 1
-    
-    top_keywords = [word for word, _ in word_counts.most_common(10)]
+    # If filter_following flag is set to True, we filter posts by followed users' user IDs
+    if (filter_following):
+        query_string += '''p.user_id IN (''' + followed_user_ids + ''')'''
 
-    query = "SELECT p.id, p.content, p.created_at, u.username, u.id as user_id FROM posts p JOIN users u ON p.user_id = u.id"
-    params = []
-    
-    # If filtering by following, add a WHERE clause to only include followed users.
-    if filter_following:
-        query += " WHERE p.user_id IN (SELECT followed_id FROM follows WHERE follower_id = ?)"
-        params.append(user_id)
-        
-    all_other_posts = query_db(query, tuple(params))
-    
-    recommended_posts = []
-    liked_post_ids = {post['id'] for post in query_db('SELECT post_id as id FROM reactions WHERE user_id = ?', (user_id,))}
-
-    for post in all_other_posts:
-        if post['id'] in liked_post_ids or post['user_id'] == user_id:
-            continue
-        
-        if any(keyword in post['content'].lower() for keyword in top_keywords):
-            recommended_posts.append(post)
-
+    for word in keywords:
+        print(f'word: {word}')
+        query_string += '''p.content LIKE "%'''+word+'''%" 
+                        ORDER BY p.created_at DESC'''
+        posts_containing_keywords = query_db(query_string)
+        # print(posts_containing_keywords[0]['content'])
+        if (len(posts_containing_keywords) > 5):
+            break
+    recommended_posts = posts_containing_keywords[:5]
+    # Order recommended posts in the descending order of created_at value
     recommended_posts.sort(key=lambda p: p['created_at'], reverse=True)
-    
-    return recommended_posts[:5]
+    return recommended_posts
 
 
 # Task 3.2
