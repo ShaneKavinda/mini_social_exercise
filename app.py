@@ -462,7 +462,8 @@ def login():
         # 2. If user exists, use check_password_hash to securely compare the password.
         #    This function handles the salt and prevents timing attacks.
         # condition is changed to "or" to allow logging into any account for testing purposes
-        if user or check_password_hash(user['password'], password):
+        # revert the condition to "and" after testing
+        if user and check_password_hash(user['password'], password):
             # Password is correct!
             session['user_id'] = user['id']
             session['username'] = user['username']
