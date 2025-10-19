@@ -905,6 +905,16 @@ def recommend(user_id, filter_following):
                                 'GROUP BY ' \
                                 '       posts.id ' \
                                 'ORDER BY posts.created_at DESC', [user_id, user_id]);
+    
+    # Return 5 latest posts if the user has no previous user interactions
+    if (len(interacted_posts) == 0):
+        latest_5_posts = query_db('''
+                            SELECT p.id, p.user_id , p.content, u.username, p.created_at 
+                        FROM posts AS p INNER JOIN users AS u 
+                            ON p.user_id = u.id 
+                        ORDER BY p.created_at DESC LIMIT 5
+                        ''')
+        return latest_5_posts
 
     contents = [row['content'] for row in interacted_posts]
     interacted_post_id_str = ','.join(str(row['id']) for row in interacted_posts)   # To filter out posts user already interacted with
