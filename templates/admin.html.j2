@@ -33,6 +33,15 @@
             Comments
         </button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link {% if current_tab == 'post_reports' %}active{% endif %}" 
+                id="post-reports-tab" data-bs-toggle="tab" data-bs-target="#post_reports" 
+                type="button" role="tab" aria-controls="post_reports" 
+                aria-selected="{% if current_tab == 'post_reports' %}true{% else %}false{% endif %}"
+                onclick="window.location.href = '{{ url_for('admin_dashboard', tab='post_reports', post_reports_page=post_reports_page) }}'">
+            Post Reports
+        </button>
+    </li>
 </ul>
 
 <!-- Tab Content -->
@@ -208,6 +217,69 @@
             <span class="mx-3 text-muted">Page {{ comments_page }} of {{ total_comments_pages }}</span>
             <a href="{{ url_for('admin_dashboard', tab='comments', comments_page=comments_page+1) }}"
               class="btn btn-primary {% if not comments_has_next %}btn-light disabled{% endif %}">
+              Next &raquo;
+            </a>
+        </div>
+    </div>
+
+
+    <!-- Post Reports Tab -->
+    <div class="tab-pane fade {% if current_tab == 'post_reports' %}show active{% endif %}" id="post_reports" role="tabpanel" aria-labelledby="post-reports-tab">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Author</th>
+                        <th>Content</th>
+                        <th>Created At</th>
+                        <th>Risk Level</th>
+                        <th>Report Count</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for post_report in post_reports %}
+                    <tr>
+                        <td>{{ post_report.id }}</td>
+                        <td><a href="{{ url_for('user_profile', username=post_report.username) }}">{{ post_report.username }}</a></td>
+                        <td style="max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ post_report.content }}"><a href="{{ url_for('post_detail', post_id=post_report.post_id) }}">{{ post_report.content }}</a></td>
+                        <td>{{ post_report.created_at|datetimeformat }}</td>
+                        <td>
+                            {% if post_report.risk_label == "HIGH" %}
+                                <span class="badge bg-danger">HIGH</span>
+                            {% elif post_report.risk_label == "MEDIUM" %}
+                                <span class="badge bg-warning text-dark">MEDIUM</span>
+                            {% elif post_report.risk_label == "LOW" %}
+                                <span class="badge bg-info text-dark">LOW</span>
+                            {% else %}
+                                <span class="badge bg-secondary">NONE</span>
+                            {% endif %}
+                            <span class="ms-2">({{ post_report.risk_score }})</span>
+                        </td>
+                        <td>
+                            {{ post_report.report_count }}
+                        </td>
+                        <td>
+                            <form action="{{ url_for('admin_delete_post', post_id=post_report.post_id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this post?');">
+                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {# Posts Pagination UI #}
+        <div class="d-flex justify-content-center align-items-center my-4">
+            <a href="{{ url_for('admin_dashboard', tab='post_reports', post_reports_page=post_reports_page-1) }}"
+              class="btn btn-primary {% if not post_reports_has_prev %}btn-light disabled{% endif %}">
+              &laquo; Previous
+            </a>
+            <span class="mx-3 text-muted">Page {{ post_reports_page }} of {{ total_post_reports_pages }}</span>
+            <a href="{{ url_for('admin_dashboard', tab='post_reports', post_reports_page=post_reports_page+1) }}"
+              class="btn btn-primary {% if not post_reports_has_next %}btn-light disabled{% endif %}">
               Next &raquo;
             </a>
         </div>

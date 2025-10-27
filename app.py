@@ -268,6 +268,45 @@ def delete_post(post_id):
     # Redirect back to the page the user came from, or the feed as a fallback
     return redirect(request.referrer or url_for('feed'))
 
+@app.route('/posts/<int:post_id>/report', methods=['POST'])
+def report_post(post_id):
+    """Handles reporting a post."""
+    user_id = session.get('user_id')
+
+    # Block access if user is not logged in
+    if not user_id:
+        flash('You must be logged in to report a post.', 'danger')
+        return redirect(url_for('login'))
+
+    # Find the post in the database
+    post = query_db('SELECT id, user_id FROM posts WHERE id = ?', (post_id,), one=True)
+
+    # Check if the post exists and if the current user is the owner
+    if not post:
+        flash('Post not found.', 'danger')
+        return redirect(url_for('feed'))
+
+    # If all checks pass, proceed with reporting
+    db = get_db()
+
+    # Step 1: Check if the user has already reported this post
+    existing_report = query_db('SELECT id FROM post_reports WHERE post_id = ? AND user_id = ?',
+                                 (post_id, user_id), one=True)
+
+    if existing_report:
+        # Step 2: If it exists, return the user back to the user feed
+        return redirect(request.referrer or url_for('feed'))
+    else:
+        # Step 3: If it does not exist, INSERT a new post report to post_reports table.
+        db.execute('INSERT INTO post_reports (post_id, user_id) VALUES (?, ?)',
+                   (post_id, user_id))
+
+    db.commit()
+
+    return redirect(request.referrer or url_for('feed'))
+
+
+
 @app.route('/u/<username>')
 def user_profile(username):
     """Displays a user's profile page with moderated bio, posts, and latest comments."""
@@ -699,10 +738,12 @@ def admin_dashboard():
         users_page = int(request.args.get('users_page', 1))
         posts_page = int(request.args.get('posts_page', 1))
         comments_page = int(request.args.get('comments_page', 1))
+        post_reports_page = int(request.args.get('post_reports_page', 1))
     except ValueError:
         users_page = 1
         posts_page = 1
         comments_page = 1
+        post_reports_page = 1
     
     current_tab = request.args.get('tab', 'users') # Default to 'users' tab
 
@@ -781,11 +822,45 @@ def admin_dashboard():
 
     comments.sort(key=lambda x: x['risk_score'], reverse=True) # Sort after fetching and scoring
 
+    # --- Reports Tab Data ---
+    post_reports_offset = (post_reports_page - 1) * PAGE_SIZE
+    total_reports_count = query_db('SELECT COUNT(*) as count FROM post_reports', one=True)['count']
+    total_post_reports_pages = (total_reports_count + PAGE_SIZE - 1) // PAGE_SIZE
+
+    post_reports_raw = query_db(f'''
+        SELECT pr.post_id, p.content ,p.user_id, u.username, u.created_at  as created_at ,COUNT(*) AS report_count
+        FROM 
+            post_reports AS pr
+        INNER JOIN posts as p 
+            ON p.id = pr.post_id 
+        INNER JOIN users as u 
+            ON u.id = p.user_id 
+        GROUP BY pr.post_id 
+        ORDER BY pr.id DESC
+        LIMIT ? OFFSET ?
+    ''', (PAGE_SIZE, post_reports_offset))
+    post_reports = []
+    for report in post_reports_raw:
+        post_reports_dict = dict(report)
+        _, base_score = moderate_content(post_reports_dict['content'])
+        final_score = base_score 
+        author_created_dt = post_dict['user_created_at']
+        author_age_days = (datetime.utcnow() - author_created_dt).days
+        if author_age_days < 7:
+            final_score *= 1.5
+        risk_label, risk_sort_key = get_risk_profile(final_score)
+        post_reports_dict['risk_label'] = risk_label
+        post_reports_dict['risk_sort_key'] = risk_sort_key
+        post_reports_dict['risk_score'] = round(final_score, 2)
+        post_reports.append(post_reports_dict)
+
+    post_reports.sort(key=lambda x: x['risk_score'], reverse=True) # Sort after fetching and scoring
 
     return render_template('admin.html.j2', 
                            users=users, 
                            posts=posts, 
                            comments=comments,
+                           post_reports=post_reports,
                            
                            # Pagination for Users
                            users_page=users_page,
@@ -804,6 +879,12 @@ def admin_dashboard():
                            total_comments_pages=total_comments_pages,
                            comments_has_next=(comments_page < total_comments_pages),
                            comments_has_prev=(comments_page > 1),
+
+                           # Pagination for Posts
+                           post_reports_page=post_reports_page,
+                           total_post_reports_pages=total_post_reports_pages,
+                           post_reports_has_next=(post_reports_page < total_post_reports_pages),
+                           post_reports_has_prev=(post_reports_page > 1),
 
                            current_tab=current_tab,
                            PAGE_SIZE=PAGE_SIZE)

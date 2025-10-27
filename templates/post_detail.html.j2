@@ -20,6 +20,12 @@
         </div>
         {% else %}
         <small class="text-muted">{{ post.created_at|datetimeformat }}</small>
+        <!-- Report post Button (triggers HTTP POST request) -->
+        <form action="{{ url_for('report_post', post_id=post.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to report this post?');">
+              <button type="submit" class="btn btn-danger btn-sm" title="Report Post">
+                  Report
+              </button>
+          </form>
         {% endif %}
       </div>
       

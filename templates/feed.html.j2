@@ -72,7 +72,14 @@
             </form>
         </div>
         {% else %}
-        <small class="text-muted">{{ entry.post.created_at|datetimeformat }}</small>
+        <div class="d-flex align-items-center">
+          <small class="text-muted me-3">{{ entry.post.created_at|datetimeformat }}</small>
+          <form action="{{ url_for('report_post', post_id=entry.post.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to report this post?');">
+              <button type="submit" class="btn btn-danger btn-sm" title="Report Post">
+                  Report
+              </button>
+          </form>
+        </div>
         {% endif %}
       </div>
       
